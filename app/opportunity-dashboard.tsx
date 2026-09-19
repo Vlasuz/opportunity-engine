@@ -63,35 +63,20 @@ export function OpportunityDashboard() {
   const selected = problems.find((problem) => problem.id === selectedId) ?? filtered[0] ?? problems[0];
 
   async function runResearch() {
-    let importedPosts = redditPosts;
-    let analysisText = sourceText;
     if (sourceMode === "reddit") {
       setIsSaving(true);
-      setNotice("Ищу обсуждения в Reddit…");
-      try {
-        const params = new URLSearchParams({ q: niche, limit: "100", time: "year" });
-        if (subreddit.trim()) params.set("subreddit", subreddit.trim().replace(/^r\//, ""));
-        const response = await fetch(`/api/reddit/search?${params}`);
-        const data = await response.json() as { posts?: RedditPost[]; error?: string; setupRequired?: boolean };
-        if (!response.ok || !data.posts) throw new Error(data.error || "Reddit search failed");
-        importedPosts = data.posts;
-        analysisText = data.posts.map((post) => `${post.title}. ${post.text}`).join("\n");
-        setRedditPosts(data.posts);
-        setSourceText(analysisText);
-      } catch (error) {
-        setNotice(error instanceof Error ? error.message : "Reddit временно недоступен");
-        setIsSaving(false);
-        return;
-      }
+      const next = demoProblems.map((problem) => ({ ...problem, id: `${problem.id}-${Date.now()}` }));
+      setProblems(next);
+      setSelectedId(next[0].id);
+      setNotice(`Демо-данные · ${next.reduce((sum, problem) => sum + problem.mentions, 0)} упоминания · ${next.length} кластеров`);
+      window.setTimeout(() => setIsSaving(false), 450);
+      return;
     }
-    const next = analysisText.trim() ? analyzeText(analysisText, niche, sourceMode === "reddit" ? importedPosts : []) : demoProblems.map((p) => ({ ...p, id: `${p.id}-${Date.now()}` }));
+    const next = sourceText.trim() ? analyzeText(sourceText, niche) : demoProblems.map((p) => ({ ...p, id: `${p.id}-${Date.now()}` }));
     if (!next.length) { setNotice("Не нашёл повторяющихся маркеров — добавь больше исходных сообщений"); return; }
-    setProblems(next); setSelectedId(next[0].id); setNotice(`${sourceMode === "reddit" ? importedPosts.length + " Reddit-постов" : next.reduce((sum, p) => sum + p.mentions, 0) + " совпадений"} · ${next.length} кластеров`); setIsSaving(true);
-    try {
-      const response = await fetch("/api/research", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ niche, market, sourceText, problems: next }) });
-      if (!response.ok) throw new Error("save failed");
-      setNotice((current) => `${current} · обработано`);
-    } catch { setNotice((current) => `${current} · без сохранения`); } finally { setIsSaving(false); }
+    setProblems(next);
+    setSelectedId(next[0].id);
+    setNotice(`${next.reduce((sum, p) => sum + p.mentions, 0)} совпадений · ${next.length} кластеров · обработано в браузере`);
   }
 
   useEffect(() => {
@@ -119,9 +104,9 @@ export function OpportunityDashboard() {
       <div className="mx-auto max-w-[1500px] px-4 py-5 sm:px-7 sm:py-7">
         <section className="rounded-2xl border border-white/10 bg-[#0d1420] p-4 shadow-2xl shadow-black/20 sm:p-5">
           <div className="mb-4 flex flex-wrap items-center gap-2">
-            <Button type="button" size="sm" variant={sourceMode === "reddit" ? "default" : "outline"} onClick={() => setSourceMode("reddit")} className={sourceMode === "reddit" ? "bg-[#ff4500] text-white hover:bg-[#ff5b20]" : "border-white/10 bg-transparent"}><MessageCircle /> Reddit</Button>
+            <Button type="button" size="sm" variant={sourceMode === "reddit" ? "default" : "outline"} onClick={() => setSourceMode("reddit")} className={sourceMode === "reddit" ? "bg-[#ff4500] text-white hover:bg-[#ff5b20]" : "border-white/10 bg-transparent"}><MessageCircle /> Reddit Demo</Button>
             <Button type="button" size="sm" variant={sourceMode === "manual" ? "default" : "outline"} onClick={() => setSourceMode("manual")} className={sourceMode === "manual" ? "bg-[#71f6bd] text-[#07110c]" : "border-white/10 bg-transparent"}><BookOpen /> Ручной импорт</Button>
-            <span className="ml-auto text-xs text-slate-500">{sourceMode === "reddit" ? "Официальный OAuth API · посты за 12 месяцев" : "Один материал на строку"}</span>
+            <span className="ml-auto text-xs text-slate-500">{sourceMode === "reddit" ? "Встроенные демонстрационные данные · API не требуется" : "Один материал на строку"}</span>
           </div>
           <div className={`grid gap-3 ${sourceMode === "reddit" ? "lg:grid-cols-[1fr_210px_210px_auto]" : "lg:grid-cols-[1fr_210px_auto]"}`}>
             <label className="space-y-2"><span className="text-sm font-medium text-slate-300">Ниша</span><Input value={niche} onChange={(e) => setNiche(e.target.value)} className="h-11 border-white/10 bg-[#090f18] text-base" placeholder="Roofing, HVAC, dentists…" /></label>
@@ -130,7 +115,7 @@ export function OpportunityDashboard() {
             <Button onClick={runResearch} disabled={isSaving} className="mt-auto h-11 rounded-xl bg-[#71f6bd] px-5 font-semibold text-[#07110c] hover:bg-[#93ffd0]"><Sparkles />{isSaving ? "Анализ…" : "Найти возможности"}</Button>
           </div>
           {sourceMode === "manual" && <details className="mt-4 group" open><summary className="cursor-pointer list-none text-sm text-slate-400 hover:text-white"><span className="inline-flex items-center gap-2"><Plus className="size-4 transition-transform group-open:rotate-45" />Вставить обсуждения, отзывы или вакансии</span></summary><div className="mt-3 grid gap-3 lg:grid-cols-[1fr_270px]"><Textarea value={sourceText} onChange={(e) => setSourceText(e.target.value)} className="min-h-36 border-white/10 bg-[#090f18]" placeholder={'Каждое сообщение с новой строки. Например:\n“We miss calls after 6pm…”\n“Our CRM is too expensive…”'} /><div className="rounded-xl border border-dashed border-white/12 p-4 text-sm leading-6 text-slate-400"><BookOpen className="mb-3 size-5 text-[#71f6bd]" />MVP ищет повторяющиеся сигналы: ручная работа, потерянные лиды, сметы, расписание, дорогой софт. Исходные цитаты остаются рядом с выводом.</div></div></details>}
-          {sourceMode === "reddit" && <div className="mt-4 flex items-start gap-2 rounded-xl border border-white/8 bg-[#090f18] px-3 py-2.5 text-xs leading-5 text-slate-500"><AlertCircle className="mt-0.5 size-4 shrink-0" /><span>Поиск работает через разрешённый Reddit Data API. Система не собирает email и не профилирует пользователей — только анализирует публичные обсуждения и сохраняет ссылки на источники.</span></div>}
+          {sourceMode === "reddit" && <div className="mt-4 flex items-start gap-2 rounded-xl border border-white/8 bg-[#090f18] px-3 py-2.5 text-xs leading-5 text-slate-500"><AlertCircle className="mt-0.5 size-4 shrink-0" /><span>Сейчас включён публичный демо-режим: примеры обсуждений встроены в приложение, поэтому Reddit API и переменные окружения не нужны.</span></div>}
         </section>
         <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
           <section className="overflow-hidden rounded-2xl border border-white/10 bg-[#0d1420]">
